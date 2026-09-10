@@ -27,4 +27,6 @@ df_allocine <- df %>%
   left_join(df_correspondance, by = c("nationalite" = "nationalité"))
 
 # Traitements des données
-df_allocine <- df_allocine %>% select(-recompenses)
+df_allocine <- df_allocine %>% 
+  select(-recompenses) %>% 
+  mutate(annee_sortie = year(date_sortie))
