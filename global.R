@@ -24,12 +24,12 @@ data_ulule_clean <- data_ulule |>
          date_end = as.Date(date_end), 
          annee = year(date_start), 
          trimestre = paste0("T", quarter(date_start))
-        ) |> 
+  ) |> 
   filter(is_cancelled == FALSE, 
          !is.na(date_start), 
          date_start >= as.Date("2020-01-01"), 
          currency == "EUR"
-        )
+  )
 
 # 3. Recalcul des indicateurs
 data_ulule_clean <- data_ulule_clean |> 
