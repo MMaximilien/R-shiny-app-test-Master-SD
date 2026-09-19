@@ -1,32 +1,45 @@
-# Import des librairies
+# ============================================================
+# global.R
+# ============================================================
+
 library(tidyverse)
-library(readxl)
-library(ggiraph)
-library(DT)
-library(gt)
 
 library(shiny)
+library(dplyr)
+library(ggplot2)
+library(DT)
+library(ggiraph)
+library(shinydashboard)
+library(bslib)
+library(lubridate)
 
-# Imports des données
-df <- read_csv2("data/data_allocine.csv")
-#view(df)
-glimpse(df)
-str(df)
+# 1. Chargement des données
+chemin_donnees <- "data/data_ulule_2025.csv"
+data_ulule <- read_csv(chemin_donnees)
 
-# Nettoyage des données
-df_fr <- filter(df, nationalite == "français")
-df_fr <- arrange(df_fr, desc(duree))
+# 2. Netoyage des données
+# Filtre : campagnes non-annulées, date de début correcte et après 2020, devise uniquement euros (EUR)
+data_ulule_clean <- data_ulule |> 
+  mutate(date_start = as.Date(date_start), 
+         date_end = as.Date(date_end), 
+         annee = year(date_start), 
+         trimestre = paste0("T", quarter(date_start))
+        ) |> 
+  filter(is_cancelled == FALSE, 
+         !is.na(date_start), 
+         date_start >= as.Date("2020-01-01"), 
+         currency == "EUR"
+        )
 
-df_correspondance <- read_excel("data/correspondances_allocine.xlsx")
-#view(df_correspondance)
-glimpse(df_correspondance)
-str(df_correspondance)
+# 3. Recalcul des indicateurs
+data_ulule_clean <- data_ulule_clean |> 
+  mutate(nb_days_recal = as.double(difftime(date_end, date_start, units="days")))
 
-# Jointure avec allocine
-df_allocine <- df %>% 
-  left_join(df_correspondance, by = c("nationalite" = "nationalité"))
+# 4. Création de listes supplémentaires
+liste_categories <- sort(unique(na.omit(data_ulule_clean$category)))
 
-# Traitements des données
-df_allocine <- df_allocine %>% 
-  select(-recompenses) %>% 
-  mutate(annee_sortie = year(date_sortie))
+indicateurs <- c(
+  "Nombre de campagnes" = "nb_campagnes",
+  "Nombre de campagnes réussies" = "nb_reussies",
+  "Montant financé (€)" = "montant"
+)

@@ -1,5 +1,7 @@
 .Rproj.user
 app_exemple
+data/correspondances_allocine.xlsx
+data/data_allocine.csv
 .Rhistory
 projet.Rproj
 script_1.R
