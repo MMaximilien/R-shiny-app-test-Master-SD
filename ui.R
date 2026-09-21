@@ -164,7 +164,7 @@ ui <- fluidPage(
             # Affiche la table dynamique
             DT::DTOutput("table_donnees")
           )
-        )
+        )#
       ) # Fin du tabsetPanel
     ) # Fin du mainPanel
   ) # Fin du sidebarLayout
