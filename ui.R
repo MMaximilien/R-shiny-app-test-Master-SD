@@ -1,26 +1,21 @@
-
 # ============================================================
 # ui.
 # ============================================================
 ui <- fluidPage(
-  # applique le thème boostrap 5 via le package bslib
+  # applique le thème bootstrap 5 via le package bslib
   theme = bslib::bs_theme(version = 5),
-  #Affiche le titre principal en haut de l'application
+  
+  # Affiche le titre principal en haut de l'application
   titlePanel("Suivi trimestriel des campagnes Ulule"),
-  #structure la page avec une barre latérale (filtres) et un panneau principal
+  
+  # structure la page avec une barre latérale (filtres) et un panneau principal
   sidebarLayout(
-    #barre latérale avec les filtres
+    
+    # barre latérale avec les filtres
     sidebarPanel(
-      width = 3, #largeur de la barre latérale
+      width = 3, # largeur de la barre latérale
       
-      checkboxGroupInput(
-        inputId = "indicateur",
-        label = "Choisir un indicateur :",
-        choices = indicateurs,
-        selected = "nb_campagnes"
-      ),
-      
-      #filtre de sélection pour les années
+      # filtre de sélection pour les années
       selectInput(
         inputId = "annee",
         label = "Année",
@@ -28,7 +23,7 @@ ui <- fluidPage(
         selected = sort(unique(data_ulule_clean$annee)),
         multiple = TRUE
       ),
-      #filtres pour les trimestres
+      # filtres pour les trimestres
       selectInput(
         inputId = "trimestre",
         label = "Trimestre",
@@ -36,7 +31,7 @@ ui <- fluidPage(
         selected = sort(unique(data_ulule_clean$trimestre)),
         multiple = TRUE
       ),
-      #filtres pour les catégories
+      # filtres pour les catégories
       selectInput(
         inputId = "categories",
         label = "Catégorie(s) :",
@@ -44,70 +39,134 @@ ui <- fluidPage(
         selected = liste_categories,
         multiple = TRUE
       ),
-      #Bouton pour le téléchargment du fichier csv
+      # Bouton pour le téléchargement du fichier csv
       downloadButton(
         "telecharger",
         "Télécharger les campagnes (CSV)"
       )
     ),
     
-    #Panneau principal
+    # Panneau principal
     mainPanel(
       width = 9,
-      #Création d'un système d'onglets pour naviguer
+      
+      # Création d'un système d'onglets pour naviguer
       tabsetPanel(
-        #Analyse globale des campagnes
+        
+        # Onglet 1 : Analyse globale des campagnes
         tabPanel(
           "Analyse des campagnes",
+          br(),
           
-          #3indicateurs 
-          layout_columns(
-            
+          
+          # 3 indicateurs 
+          bslib::layout_columns(
             value_box(
-              title = "Nombre de campagnes", #libellé
-              value = textOutput("kpi_nb_campagnes"), #valeur dynamique
-              showcase = bsicons::bs_icon("megaphone"), #icône
-              theme = "primary" #couleur du bloc
+              title = "Nombre de campagnes",
+              value = textOutput("kpi_nb_campagnes"),
+              showcase = bsicons::bs_icon("megaphone"),
+              theme = "primary"
             ),
-            
             value_box(
               title = "Campagnes réussies",
               value = textOutput("kpi_nb_reussies"),
               showcase = bsicons::bs_icon("check-circle"),
               theme = "success"
             ),
-            
             value_box(
               title = "Taux de réussite",
               value = textOutput("kpi_taux_reussite"),
               showcase = bsicons::bs_icon("percent"),
-              theme = "info"
+              theme = value_box_theme(bg = "#00A3E0", fg = "#FFFFFF")
             ),
-            
-            col_widths = c(4, 4, 4) #découpage
-            
+            col_widths = c(4, 4, 4)
           ),
           
-          girafeOutput("graphique"), #zone d'affichage du graphique
+          # Carte pour le graphique
+          card(
+            card_header(
+              h3("Évolution des campagnes", align = "center")
+            ),
+            div(
+              radioButtons(
+                inputId = "indicateur",
+                label = NULL,
+                choices = indicateurs_campagnes,
+                selected = "nb_campagnes",
+                inline = TRUE
+              )
+            ),
+            girafeOutput(
+              "graphique",
+              height = "450px"
+            )
+          ),
           
-          h4("Durée moyenne des campagnes (en jours)"), #titre
+          # Éléments sous la carte (inclus dans l'onglet)
+          h4("Durée moyenne des campagnes (en jours)"),
           tableOutput("tableau_duree"),
-          
-          tags$p(tags$em("Calculé uniquement sur les campagnes terminées.")
-          )
-        ),
+          tags$p(tags$em("Calculé uniquement sur les campagnes terminées."))
+        ), # Fin du premier tabPanel
         
+        # Onglet 2
         tabPanel(
           "Analyse des financements",
-          DTOutput("tableau")
-        ),
+          br(),
+          
+          layout_columns(
+            value_box(
+              title = "Montant total financé",
+              value = textOutput("kpi_montant_total"),
+              showcase = bsicons::bs_icon("cash-stack"),
+              theme = value_box_theme(bg = "#00A3E0", fg = "#FFFFFF")
+            ),
+            value_box(
+              title = "Montant médian par campagne",
+              value = textOutput("kpi_montant_median"),
+              showcase = bsicons::bs_icon("graph-up"),
+              theme = value_box_theme(bg = "#E07B00", fg = "#FFFFFF")
+            ),
+            value_box(
+              title = "Pays le plus financé",
+              value = textOutput("kpi_top_pays"),
+              showcase = bsicons::bs_icon("geo-alt"),
+              theme = value_box_theme(bg = "#8E44AD", fg = "#FFFFFF")
+            )
+          ),
+          card(
+            card_header(
+              h3("Analyse des financements", align = "center")
+            ),
+            div(
+              radioButtons(
+                inputId  = "vue_montant",
+                label    = NULL,
+                choices  = c(
+                  "Montant total"                               = "total",
+                  "Montant médian du financement des campagnes" = "mediane"
+                ),
+                selected = "total",
+                inline   = TRUE
+              )
+            ), # <-- Fermeture du div
+            girafeOutput("graphique_financement")
+          )
+          ), # <-- Fermeture de card()
         
+        # Onglet 3
         tabPanel(
-          "Données"
+          "Données",
+          br(),
+          bslib::card(
+            bslib::card_header(
+              h3("Extrait des données des campagnes", align = "center")
+            ),
+            # Affiche la table dynamique
+            DT::DTOutput("table_donnees")
+          )
         )
-      )
-    )
-  )
+      ) # Fin du tabsetPanel
+    ) # Fin du mainPanel
+  ) # Fin du sidebarLayout
 )
-
-
+# Fin de fluidPage

@@ -10,10 +10,12 @@ library(ggiraph)
 library(shinydashboard)
 library(bslib)
 library(lubridate)
+library(readr)
+library(tidyr)
 
 
 # ---- 1. Chargement des données --------------------------------------------
-chemin_donnees <- "data/data_ulule_2025.csv"  
+data_ulule <- read_csv("data/data_ulule_2025.csv")
 
 #Format date
 
@@ -31,8 +33,8 @@ data_ulule_clean$trimestre <- paste0("T", quarter(data_ulule_clean$date_start))
 
 liste_categories <- sort(unique(na.omit(data_ulule_clean$category)))
 
-indicateurs <- c(
-  "Nombre de campagnes" = "nb_campagnes",
+indicateurs_campagnes <- c(
+  "Nombre de campagnes"          = "nb_campagnes",
   "Nombre de campagnes réussies" = "nb_reussies",
-  "Montant financé (€)" = "montant"
+  "Ratio (%)"             = "combine"   # ou "Répartition réussite/échec (%)"
 )
