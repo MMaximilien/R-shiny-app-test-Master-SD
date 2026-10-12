@@ -1,6 +1,7 @@
 # ============================================================
 # ui.
 # ============================================================
+
 ui <- fluidPage(
   # applique le thème bootstrap 5 via le package bslib
   theme = bslib::bs_theme(version = 5),

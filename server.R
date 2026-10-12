@@ -4,7 +4,7 @@
 
 server <- function(input, output, session) {
   
-  # ---- Données filtrées selon les choix de l'utilisateur ----
+  # ---- Données filtrées selon les choix de l'utilisateur ---
   donnees_filtrees <- reactive({
     req(input$categories, input$annee, input$trimestre) 
     
