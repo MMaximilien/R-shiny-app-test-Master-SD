@@ -4,68 +4,98 @@
 
 server <- function(input, output, session) {
   
-  # ---- Données filtrées selon les choix de l'utilisateur ---
+  # ---- Réinitialisation des filtres ---------------------------------
+  observeEvent(input$reset_filtres, {
+    updateCheckboxGroupInput(session, "annee",     selected = liste_annees)
+    updateCheckboxGroupInput(session, "trimestre", selected = liste_trimestres)
+    shinyWidgets::updatePickerInput(session, "categories", selected = liste_categories)
+    updateRadioButtons(session, "indicateur",   selected = "nb_campagnes")
+    updateRadioButtons(session, "vue_montant",  selected = "total")
+    updateRadioButtons(session, "critere_pays", selected = "montant")
+  })
+  
+  
+  # ---- Résumé des filtres actifs ------------------------------------
+  output$resume_filtres <- renderText({
+    paste0(
+      length(input$annee), " année(s) · ",
+      length(input$trimestre), " trimestre(s) · ",
+      length(input$categories), " catégorie(s) sur ", length(liste_categories)
+    )
+  })
+  
+  
+  # ---- Données filtrées selon les choix de l'utilisateur ------------
   donnees_filtrees <- reactive({
-    req(input$categories, input$annee, input$trimestre) 
-    
-    data_ulule_clean   |> 
+    df <- data_ulule_clean |>
       filter(
         category %in% input$categories,
         annee %in% input$annee,
         trimestre %in% input$trimestre
       )
+    
+    validate(need(nrow(df) > 0, "Aucune campagne ne correspond à ces filtres."))
+    
+    df
   })
   
-  # ---- KPI : nombre de campagnes -------------------------------
+  
+  ##### KPI PAGE CAMPAGNES ###############
+  
+  stats_campagnes <- reactive({
+    df <- donnees_filtrees()
+    nb_campagnes  <- nrow(df)
+    nb_reussies   <- sum(df$goal_raised == TRUE, na.rm = TRUE)
+    taux_reussite <- round(nb_reussies / nb_campagnes * 100, 1)
+    
+    list(
+      nb_campagnes  = nb_campagnes,
+      nb_reussies   = nb_reussies,
+      taux_reussite = taux_reussite
+    )
+  })
+  
   output$kpi_nb_campagnes <- renderText({
-    nrow(donnees_filtrees())
+    stats_campagnes()$nb_campagnes
   })
   
-  
-  # ---- KPI : nombre de campagnes réussies ----------------------
   output$kpi_nb_reussies <- renderText({
-    sum(donnees_filtrees()$goal_raised == TRUE, na.rm = TRUE)
+    stats_campagnes()$nb_reussies
   })
   
-  
-  # ---- KPI : taux de réussite ----------------------------------
   output$kpi_taux_reussite <- renderText({
-    
-    nb_campagnes <- nrow(donnees_filtrees())
-    nb_reussies <- sum(donnees_filtrees()$goal_raised == TRUE, na.rm = TRUE)
-    
-    if (nb_campagnes == 0) {
-      return("0 %")
-    }
-    
-    paste0(round(nb_reussies / nb_campagnes * 100, 1), " %")
+    paste0(stats_campagnes()$taux_reussite, " %")
   })
   
   
-  # ---- Graphique : nombre de campagnes ----------------------
-  output$graphique <- renderGirafe({
+  # ---- Table agrégée par période ------------------------------------
+  donnees_par_periode <- reactive({
+    df <- donnees_filtrees()
     
-    df <- donnees_filtrees() |>
-      #Nbre total de campagnes par année et par trimestre
+    df |>
       count(annee, trimestre, name = "nombre_campagnes") |>
-      # fusion avec les campagnes réussies ( objectif atteint)
       left_join(
-        donnees_filtrees() |>
+        df |>
           filter(goal_raised == TRUE) |>
           count(annee, trimestre, name = "nombre_reussies"),
         by = c("annee", "trimestre")
       ) |>
       mutate(
-        nombre_reussies = replace_na(nombre_reussies, 0), # Sécurité NA
+        nombre_reussies = replace_na(nombre_reussies, 0),
         taux_reussite   = round(nombre_reussies / nombre_campagnes * 100, 1),
-        periode = paste0(annee, "- ", trimestre)
+        periode         = paste0(annee, "- ", trimestre)
       ) |>
-      arrange(annee, trimestre)
+      arrange(annee, trimestre) |>
+      mutate(periode = factor(periode, levels = unique(periode)))
+  })
+  
+  
+  # ---- Graphique : évolution des campagnes --------------------------
+  output$graphique <- renderGirafe({
     
-    df$periode <- factor(df$periode, levels = unique(df$periode)) # confersion pour avoir un ordre chronologique
+    df <- donnees_par_periode()
     
- #Construction du graphique selon l'option choisie
-    if (input$indicateur == "combine") {
+    p <- if (input$indicateur == "combine") {
       
       df_long <- df |>
         mutate(
@@ -86,112 +116,87 @@ server <- function(input, output, session) {
         mutate(
           statut = dplyr::recode(
             statut,
-            nombre_reussies = "Réussies",
-            non_reussies = "Non réussies"
+            nombre_reussies = LABEL_REUSSIE,
+            non_reussies    = LABEL_NON_REUSSIE
           )
         )
       
-      p <- ggplot(
-        df_long,
-        aes(x = periode, y = nombre, fill = statut)
-      ) +
+      ggplot(df_long, aes(x = periode, y = nombre, fill = statut)) +
         geom_col_interactive(
-          aes(
-            tooltip = tooltip,
-            data_id = periode
-          ),
+          aes(tooltip = tooltip, data_id = periode),
           position = "fill",
           width = 0.7
         ) +
-        scale_fill_manual(
-          values = c(
-            "Réussies" = "#00A3E0",
-            "Non réussies" = "gray83"
-          )
-        ) +
+        scale_fill_manual(values = c(
+          setNames(COULEUR_REUSSIE,     LABEL_REUSSIE),
+          setNames(COULEUR_NON_REUSSIE, LABEL_NON_REUSSIE)
+        )) +
         labs(
-          y = "Nombre de campagnes",
+          y = "Part des campagnes (%)",
           fill = NULL,
-          title = "Nombre de campagnes par période"
+          title = "Taux de réussite par période"
         ) +
-        scale_y_continuous(labels = scales::label_percent()) 
-    }
-    else if (input$indicateur == "nb_reussies") {
+        scale_y_continuous(labels = scales::label_percent())
       
-      # ---- Nombre de campagnes réussies (valeur brute) ----
-      p <- ggplot(df, aes(x = periode, y = nombre_reussies)) +
+    } else if (input$indicateur == "nb_reussies") {
+      
+      ggplot(df, aes(x = periode, y = nombre_reussies)) +
         geom_col_interactive(
           aes(
             tooltip = paste0(
               "Période : ", periode,
-              "\nNombre de campagnes réussies : ", nombre_reussies ),
+              "\nNombre de campagnes réussies : ", nombre_reussies
+            ),
             data_id = periode
           ),
-          fill = "#00A3E0",
+          fill = COULEUR_REUSSIE,
           width = 0.7
-        ) + 
+        ) +
         labs(y = "Nombre de campagnes réussies", title = "Campagnes réussies par période")
       
     } else {
       
-      # ---- Nombre total brut ----
-      p <- ggplot(df, aes(x = periode, y = nombre_campagnes)) +
+      ggplot(df, aes(x = periode, y = nombre_campagnes)) +
         geom_col_interactive(
           aes(
             tooltip = paste0("Période : ", periode, "\nCampagnes : ", nombre_campagnes),
             data_id = periode
           ),
-          fill = "gray83",
+          fill = COULEUR_NON_REUSSIE,
           width = 0.7
         ) +
         labs(y = "Nombre de campagnes", title = "Nombre de campagnes par période")
     }
     
-    p <- p +
-      labs(x = "Période") +
-      theme_minimal() +
-      theme(
-        panel.grid      = element_blank(), #enleve la grille
-        legend.position = "bottom",
-        axis.text.x = element_text(angle = 45, hjust = 1)
-      )
-    
-    girafe(ggobj = p, width_svg = 8, height_svg = 4.5,
-           options = list( opts_sizing(rescale = TRUE, width = 1)) )# Force le graphique à occuper 100 % de la largeur disponible)
+    p <- p + labs(x = "Période") + theme_ulule()
+    to_girafe(p)
   })
   
   
   ##### DURÉE DES CAMPAGNES ###############
-
   
-  # Campagnes terminées, dans le périmètre filtré
   donnees_terminees <- reactive({
     donnees_filtrees() |> filter(finished == TRUE)
   })
   
-  # Tableau croisé : durée moyenne (lignes = année, colonnes = trimestre)
   output$tableau_duree <- renderTable({
-    
-    req(nrow(donnees_terminees()) > 0)
     
     ordre_trim <- c("T1", "T2", "T3", "T4")
     
     df <- donnees_terminees() |>
       mutate(annee = as.character(as.integer(annee)))
     
-    # Moyenne par année et trimestre (une ligne par combinaison)
+    validate(need(nrow(df) > 0, "Aucune campagne terminée pour ces filtres."))
+    
     par_trimestre <- df |>
       group_by(annee, trimestre) |>
       summarise(duree_moyenne = round(mean(nb_days, na.rm = TRUE), 1), .groups = "drop") |>
       tidyr::pivot_wider(names_from = trimestre, values_from = duree_moyenne)
     
-    # Réordonne les colonnes trimestre chronologiquement (T1 -> T4), en
-    # conservant en fin toute valeur inattendue plutôt que de la perdre
     cols_connues   <- intersect(ordre_trim, names(par_trimestre))
     cols_inconnues <- setdiff(names(par_trimestre), c("annee", ordre_trim))
     par_trimestre  <- par_trimestre |> select(annee, all_of(cols_connues), all_of(cols_inconnues))
     
-    # Moyenne globale par année (tous trimestres confondus)
     par_annee <- df |>
       group_by(annee) |>
       summarise(Moyenne = round(mean(nb_days, na.rm = TRUE), 1), .groups = "drop")
@@ -199,14 +204,12 @@ server <- function(input, output, session) {
     tableau <- left_join(par_trimestre, par_annee, by = "annee") |>
       arrange(annee)
     
-    # Ligne de synthèse : moyenne de chaque colonne, toutes années confondues
     ligne_ensemble <- tableau |>
       summarise(across(where(is.numeric), ~ round(mean(.x, na.rm = TRUE), 1))) |>
       mutate(annee = "Ensemble")
     
     tableau <- bind_rows(tableau, ligne_ensemble)
     
-    # Mise en forme finale : suffixe "j", 1 décimale, tiret pour les valeurs manquantes
     tableau |>
       mutate(across(
         where(is.numeric),
@@ -214,29 +217,29 @@ server <- function(input, output, session) {
       )) |>
       rename(Année = annee)
     
-  }, striped = TRUE, hover = TRUE, bordered = TRUE, spacing = "s", align = "c", width = "100%")
-    
-    ############Kpi page financement    #####################
-
+  }, striped = TRUE,
+  hover    = TRUE,
+  bordered = TRUE,
+  spacing  = "s",
+  align    = "c",
+  width    = "100%"
+  )
+  
+  
+  ##### KPI PAGE FINANCEMENT #####################
+  
   output$kpi_montant_total <- renderText({
     df <- donnees_filtrees()
-    req(nrow(df) > 0)
-    
-    montant_total <- sum(df$amount_raised, na.rm = TRUE)
-    paste0(format(round(montant_total), big.mark = " "), " €")
+    fmt_eur(sum(df$amount_raised, na.rm = TRUE))
   })
   
   output$kpi_montant_median <- renderText({
     df <- donnees_filtrees()
-    req(nrow(df) > 0)
-    
-    montant_median <- median(df$amount_raised, na.rm = TRUE)
-    paste0(format(round(montant_median), big.mark = " "), " €")
+    fmt_eur(median(df$amount_raised, na.rm = TRUE))
   })
   
   output$kpi_top_pays <- renderText({
     df <- donnees_filtrees()
-    req(nrow(df) > 0)
     
     top_pays <- df |>
       group_by(country) |>
@@ -244,22 +247,17 @@ server <- function(input, output, session) {
       arrange(desc(montant)) |>
       slice(1)
     
-    paste0(top_pays$country, " (", format(round(top_pays$montant), big.mark = " "), " €)")
+    paste0(top_pays$country, " (", fmt_eur(top_pays$montant), ")")
   })
+  
   
   # ---- ANALYSE DES FINANCEMENTS --------------------------------
   output$graphique_financement <- renderGirafe({
     
-    req(nrow(donnees_filtrees()) > 0)
-    req(input$vue_montant)
-    
-    fmt_eur <- function(x) {
-      paste0(format(round(x), big.mark = " "), " €")
-    }
     
     df <- donnees_filtrees() |>
       mutate(
-        statut = ifelse(goal_raised, "Réussies", "Échouées"),
+        statut  = ifelse(goal_raised, LABEL_REUSSIE, LABEL_NON_REUSSIE),
         periode = paste0(annee, " - ", trimestre)
       )
     
@@ -270,139 +268,66 @@ server <- function(input, output, session) {
     
     df$periode <- factor(df$periode, levels = ordre_periodes)
     
-    
-    # ============================================================
-    # VUE MONTANT TOTAL
-    # ============================================================
-    
     if (input$vue_montant == "total") {
       
+      # ---- Montant total, par statut ----
       df_plot <- df |>
         group_by(periode, statut) |>
         summarise(
           nombre_campagnes = n(),
-          montant_total = sum(amount_raised, na.rm = TRUE),
+          montant_total    = sum(amount_raised, na.rm = TRUE),
           .groups = "drop"
         ) |>
         group_by(periode) |>
         mutate(
           montant_total_periode = sum(montant_total),
-          pourcentage_montant = round(
-            montant_total / montant_total_periode * 100,
-            1
-          )
+          pourcentage_montant   = round(montant_total / montant_total_periode * 100, 1)
         ) |>
         ungroup()
       
-      p <- ggplot(
-        df_plot,
-        aes(periode, montant_total, fill = statut)
-      ) +
+      p <- ggplot(df_plot, aes(periode, montant_total, fill = statut)) +
         geom_col_interactive(
           aes(
             tooltip = paste0(
               "Période : ", periode,
               "\nStatut : ", statut,
-              "\nMontant : ", fmt_eur(montant_total),
-              " (", pourcentage_montant, " %)",
+              "\nMontant : ", fmt_eur(montant_total), " (", pourcentage_montant, " %)",
               "\nNombre de campagnes : ", nombre_campagnes,
-              "\nMontant total période : ",
-              fmt_eur(montant_total_periode)
+              "\nMontant total période : ", fmt_eur(montant_total_periode)
             ),
             data_id = paste(periode, statut)
           ),
           position = "stack",
           width = 0.7
         ) +
-        scale_fill_manual(
-          values = c(
-            "Réussies" = "#00A3E0",
-            "Échouées" = "gray83"
-          )
-        ) +
+        scale_fill_manual(values = c(
+          setNames(COULEUR_REUSSIE,     LABEL_REUSSIE),
+          setNames(COULEUR_NON_REUSSIE, LABEL_NON_REUSSIE)
+        )) +
         labs(
-          x = "Période",
-          y = "Montant total financé (€)",
-          fill = "Statut",
+          x = "Période", y = "Montant total financé (€)", fill = "Statut",
           title = "Montant total financé par période, par statut"
         ) +
-        scale_y_continuous(
-          labels = scales::label_number(
-            big.mark = " ",
-            suffix = " €"
-          )
-        ) +
-        theme_minimal() +
-        theme(
-          legend.position = "bottom",
-          panel.grid = element_blank(),
-          axis.text.x = element_text(
-            angle = 45,
-            hjust = 1
-          )
-        )
-      
-      
-      # ============================================================
-      # VUE MÉDIANE
-      # ============================================================
+        scale_y_continuous(labels = scales::label_number(big.mark = " ", suffix = " €"))
       
     } else {
       
-      resume <- function(data) {
-        data |>
-          summarise(
-            nombre_campagnes = n(),
-            montant_min = min(
-              amount_raised,
-              na.rm = TRUE
-            ),
-            montant_q1 = as.numeric(
-              quantile(
-                amount_raised,
-                0.25,
-                na.rm = TRUE
-              )
-            ),
-            montant_median = median(
-              amount_raised,
-              na.rm = TRUE
-            ),
-            montant_q3 = as.numeric(
-              quantile(
-                amount_raised,
-                0.75,
-                na.rm = TRUE
-              )
-            ),
-            montant_max = max(
-              amount_raised,
-              na.rm = TRUE
-            ),
-            .groups = "drop"
-          )
-      }
-      
-      # Résumé par période, sans séparer les statuts
+      # ---- Médiane (avec min / Q1 / Q3 / max dans le tooltip) ----
       df_plot <- df |>
         group_by(periode) |>
-        resume() |>
-        mutate(
-          statut = "Toutes campagnes (échouées & réussies)"
-        )
+        summarise(
+          nombre_campagnes = n(),
+          montant_min      = min(amount_raised, na.rm = TRUE),
+          montant_q1       = as.numeric(quantile(amount_raised, 0.25, na.rm = TRUE)),
+          montant_median   = median(amount_raised, na.rm = TRUE),
+          montant_q3       = as.numeric(quantile(amount_raised, 0.75, na.rm = TRUE)),
+          montant_max      = max(amount_raised, na.rm = TRUE),
+          .groups = "drop"
+        ) |>
+        mutate(statut = "Toutes campagnes (réussies & non réussies)")
       
-      p <- ggplot(
-        df_plot,
-        aes(
-          periode,
-          montant_median,
-          color = statut,
-          group = statut
-        )
-      ) +
-        geom_line_interactive(
-          linewidth = 1
-        ) +
+      p <- ggplot(df_plot, aes(periode, montant_median, color = statut, group = statut)) +
+        geom_line_interactive(linewidth = 1) +
         geom_point_interactive(
           aes(
             tooltip = paste0(
@@ -420,76 +345,111 @@ server <- function(input, output, session) {
           size = 3
         ) +
         scale_color_manual(
-          values = c(
-            "Toutes campagnes (échouées & réussies)" = "#27AE60"
-          )
+          values = c("Toutes campagnes (réussies & non réussies)" = COULEUR_MEDIANE)
         ) +
         labs(
-          x = "Période",
-          y = "Médiane par campagne (€)",
+          x = "Période", y = "Médiane par campagne (€)", color = NULL,
           title = "Médiane du montant financé par période"
         ) +
-        scale_y_continuous(
-          labels = scales::label_number(
-            big.mark = " ",
-            suffix = " €"
-          )
-        ) +
-        theme_minimal() +
-        theme(
-          legend.position = "bottom",
-          panel.grid = element_blank(),
-          axis.text.x = element_text(
-            angle = 45,
-            hjust = 1
-          )
-        )
+        scale_y_continuous(labels = scales::label_number(big.mark = " ", suffix = " €"))
     }
     
-    
-    # ============================================================
-    # TRANSFORMATION EN GIRAFE
-    # ============================================================
-    
-    girafe(
-      ggobj = p,
-      width_svg = 8,
-      height_svg = 4.5,
-      options = list(
-        opts_sizing(
-          rescale = TRUE,
-          width = 1
-        )
-      )
-    )
+    p <- p + theme_ulule()
+    to_girafe(p)
   })
-  ##############Données #######################
   
   
-  # Génération de l'extrait de la table
+  # ---- Top 10 des pays ------------------------------------------------
+  output$graphique_pays <- renderGirafe({
+    
+    par_nb   <- input$critere_pays == "nb"
+    
+    df <- donnees_filtrees() |>
+      filter(!is.na(country)) |>
+      group_by(country) |>
+      summarise(
+        montant_total  = sum(amount_raised, na.rm = TRUE),
+        montant_median = median(amount_raised, na.rm = TRUE),
+        nb_campagnes   = n(),
+        nb_reussies    = sum(goal_raised == TRUE, na.rm = TRUE),
+        .groups = "drop"
+      ) |>
+      mutate(taux_reussite = round(nb_reussies / nb_campagnes * 100, 1))
+    
+    validate(need(nrow(df) > 0, "Aucun pays renseigné pour ces filtres."))
+    
+    # Valeur utilisée pour classer et dessiner les barres
+    df <- df |>
+      mutate(valeur = if (par_nb) nb_campagnes else montant_total) |>
+      slice_max(valeur, n = 10, with_ties = FALSE) |>
+      mutate(country = forcats::fct_reorder(country, valeur))
+    
+    p <- ggplot(df, aes(x = valeur, y = country)) +
+      geom_col_interactive(
+        aes(
+          tooltip = paste0(
+            "Pays : ", country,
+            "\nMontant total : ", fmt_eur(montant_total),
+            "\nMontant médian : ", fmt_eur(montant_median),
+            "\nNombre de campagnes : ", nb_campagnes,
+            "\nTaux de réussite : ", taux_reussite, " %"
+          ),
+          data_id = country
+        ),
+        fill = COULEUR_PRIMAIRE,
+        width = 0.7
+      ) +
+      scale_x_continuous(
+        labels = if (par_nb) {
+          scales::label_number(big.mark = " ")
+        } else {
+          scales::label_number(big.mark = " ", suffix = " €")
+        },
+        expand = expansion(mult = c(0, 0.05))
+      ) +
+      labs(
+        x = if (par_nb) "Nombre de campagnes" else "Montant total financé (€)",
+        y = NULL,
+        title = if (par_nb) {
+          "Top 10 des pays par nombre de campagnes"
+        } else {
+          "Top 10 des pays par montant total financé"
+        }
+      ) +
+      theme_ulule() +
+      theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+    
+    to_girafe(p)
+  })
+  
+  
+  ##### DONNÉES #######################
+  
   output$table_donnees <- DT::renderDT({
-
-    extrait <- donnees_filtrees() |>
-      dplyr::relocate(absolute_url, .after = dplyr::last_col()) #mettre la colonne absolute_url a la fin du dataframe
+    extrait <- table_export(donnees_filtrees()) |>
+      # Lien cliquable (seule colonne dont le HTML n'est pas échappé)
+      mutate(Lien = ifelse(
+        is.na(Lien), NA_character_,
+        paste0('<a href="', Lien, '" target="_blank" rel="noopener">Ouvrir</a>')
+      ))
     
     DT::datatable(
       extrait,
-      options = list(
-        pageLength = 10,       # Nombre de lignes par page
-        scrollX = TRUE       # Barre de défilement horizontal si beaucoup de colonnes
-      ),
+      filter   = "top",
+      escape   = setdiff(names(extrait), "Lien"),
+      options  = list(pageLength = 10, scrollX = TRUE),
       rownames = FALSE
-    )
+    ) |>
+      DT::formatRound(c("Objectif (€)", "Montant collecté (€)"), digits = 0, mark = " ")
   })
-
+  
   # ---- Téléchargement CSV ------------------------------------
   output$telecharger <- downloadHandler(
     filename = function() {
       paste0("campagnes_ulule_", Sys.Date(), ".csv")
     },
     content = function(file) {
-      write.csv(donnees_filtrees(), file)
-      # 
+      readr::write_excel_csv2(table_export(donnees_filtrees()), file)
     }
   )
 }
