@@ -445,6 +445,6 @@ server <- function(input, output, session) {
     },
     content = function(file) { #génère et écrit le contenu 
       readr::write_excel_csv2(table_export(donnees_filtrees()), file)
-    } #Le format _csv2 utilise ; comme séparateur
+    } #le format _csv2 utilise ; comme séparateur
   )
 }

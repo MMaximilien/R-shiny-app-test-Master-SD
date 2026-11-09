@@ -168,7 +168,7 @@ theme_ulule <- function() {
 # Convertit un objet ggplot en graphique interactif girafe
 to_girafe <- function(p) {
   girafe(
-    ggobj = p, #objet qui va etre transformé
+    ggobj = p, # objet qui va etre transformé
     width_svg  = 8,
     height_svg = 4.5,
     options = list(

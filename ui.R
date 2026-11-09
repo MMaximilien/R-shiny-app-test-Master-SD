@@ -74,7 +74,7 @@ ui <- fluidPage(
         )
       ),
       
-      hr(), # ligne horizontale de séparation
+      hr(), #ligne horizontale de séparation
       
       actionButton(
         "reset_filtres",
