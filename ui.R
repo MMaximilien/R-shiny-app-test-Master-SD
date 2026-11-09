@@ -7,24 +7,32 @@ ui <- fluidPage(
   # ---- Thème bslib -----------------------------------------------
   theme = bslib::bs_theme(
     version = 5,
-    primary = COULEUR_PRIMAIRE,
-    "border-radius" = "0.6rem"
+    primary = COULEUR_PRIMAIRE, #Couleur principale : boutons, liens, bandeau
+    "border-radius" = "0.6rem" # # Coins arrondis des cartes et boutons
   ),
   
   # ---- Bandeau de titre avec logo ---------------------------------
   div(
+    #   text-bg-primary         : fond de la couleur primaire + texte lisible dessus
+    #   p-4                     : espace intérieur (padding) de taille 4
+    #   mb-4                    : marge en dessous (margin-bottom)
+    #   d-flex                  : place les éléments enfants côte à côte (flexbox)
+    #   align-items-center      : les centre verticalement
+    #   gap-3                   : espace entre les éléments
+    #   justify-content-between : pousse le 1er bloc à gauche et le dernier à droite
     class = "text-bg-primary p-4 mb-4 d-flex align-items-center gap-3 justify-content-between",
     
+    # Bloc de gauche : logo + titres
     div(
       class = "d-flex gap-3",
       tags$img(src = "logo_ulule.png", height = "70"),
       div(
-        h2("Suivi trimestriel des campagnes Ulule", class = "mb-0"),
+        h2("Suivi trimestriel des campagnes Ulule", class = "mb-0"), ## mb-0 : pas de marge basse
         p("Analyse des campagnes, financements par période & catégories")
       )
     ),
     
-    p(texte_derniere_maj)
+    p(texte_derniere_maj)   # Bloc de droite : date de la dernière campagne (texte préparé dans global.R)
   ),
   
   sidebarLayout(
@@ -38,7 +46,7 @@ ui <- fluidPage(
         label    = "Année",
         choices  = liste_annees,
         selected = liste_annees,
-        inline   = TRUE
+        inline   = TRUE #cases côte à côte
       ),
       
       checkboxGroupInput(
@@ -48,31 +56,31 @@ ui <- fluidPage(
         selected = liste_trimestres,
         inline   = TRUE
       ),
-      
+      # Liste déroulante à choix multiples avec recherche (input$categories).
       shinyWidgets::pickerInput(
         inputId  = "categories",
         label    = "Catégorie(s) :",
         choices  = liste_categories,
         selected = liste_categories,
-        multiple = TRUE,
+        multiple = TRUE, # plusieurs choix possibles
         options  = shinyWidgets::pickerOptions(
-          actionsBox         = TRUE,
-          liveSearch         = TRUE,
+          actionsBox         = TRUE, # affiche les boutons "Tout / Aucun"
+          liveSearch         = TRUE,  # champ de recherche dans la liste
           selectAllText      = "Tout sélectionner",
           deselectAllText    = "Tout désélectionner",
-          noneSelectedText   = "Aucune catégorie",
-          selectedTextFormat = "count > 2",
+          noneSelectedText   = "Aucune catégorie", # texte si rien n'est choisi
+          selectedTextFormat = "count > 2",  # au-delà de 2 choix : affiche un compteur
           countSelectedText  = "{0} catégories sélectionnées"
         )
       ),
       
-      hr(),
+      hr(), # ligne horizontale de séparation
       
       actionButton(
         "reset_filtres",
         "Réinitialiser les filtres",
         icon  = icon("rotate-left"),
-        class = "btn-outline-secondary w-100 mb-2"
+        class = "btn-outline-secondary w-100 mb-2" ## btn-outline-secondary = bouton à contour gris, w-100 = pleine largeur.
       ),
       
       downloadButton(
@@ -88,10 +96,10 @@ ui <- fluidPage(
       
       # Résumé des filtres actifs, visible quel que soit l'onglet
       div(
-        class = "text-muted small mb-2",
+        class = "text-muted small mb-2", #  # text-muted = texte grisé ; small = petite taille.
         icon("filter"), " ",
-        textOutput("resume_filtres", inline = TRUE),
-        icone_aide(AIDE_PERIMETRE)
+        textOutput("resume_filtres", inline = TRUE), #   # inline = TRUE : reste sur la même ligne que l'icône
+        icone_aide(AIDE_PERIMETRE) # # petite icône "i" 
       ),
       
       tabsetPanel(
@@ -100,12 +108,12 @@ ui <- fluidPage(
           "Analyse des campagnes",
           br(),
           
-          bslib::layout_columns(
+          bslib::layout_columns( #met plusieurs éléments en colonnes.
             value_box(
               title    = tags$span("Nombre de campagnes", icone_aide(AIDE_NB_CAMPAGNES)),
               value    = textOutput("kpi_nb_campagnes"),
               showcase = bsicons::bs_icon("megaphone"),
-              theme    = value_box_theme(bg = COULEUR_PRIMAIRE, fg = COULEUR_TEXTE_KPI)
+              theme    = value_box_theme(bg = COULEUR_PRIMAIRE, fg = COULEUR_TEXTE_KPI) # bg = fond, fg = couleur du texte
             ),
             value_box(
               title    = tags$span("Campagnes réussies", icone_aide(AIDE_REUSSIE)),
@@ -122,8 +130,9 @@ ui <- fluidPage(
             col_widths = c(4, 4, 4)
           ),
           
-          card(
+          card( # un cadre avec en-tête (card_header) et contenu.
             card_header(
+              ##Centre le contenu de l'en-tête (titre + icône d'aide)
               class = "d-flex justify-content-center align-items-center",
               h3("Évolution des campagnes", class = "mb-0"),
               icone_aide(AIDE_EVOLUTION)
@@ -132,7 +141,7 @@ ui <- fluidPage(
               inputId  = "indicateur",
               label    = NULL,
               choices  = indicateurs_campagnes,
-              selected = "nb_campagnes",
+              selected = "nb_campagnes",  # choix par défaut
               inline   = TRUE
             ),
             girafeOutput("graphique", height = "450px")
@@ -143,7 +152,7 @@ ui <- fluidPage(
             icone_aide(AIDE_DUREE)
           ),
           tableOutput("tableau_duree"),
-          tags$p(tags$em("Calculé uniquement sur les campagnes terminées."))
+          tags$p(tags$em("Calculé uniquement sur les campagnes terminées.")) # paragraphe en italique (em = emphasis)
         ),
         
         # ---- Onglet 2 : Analyse des financements -------------------
@@ -216,7 +225,7 @@ ui <- fluidPage(
             DT::DTOutput("table_donnees")
           )
         )
-      )
-    )
-  )
-)
+      )     # fin de tabsetPanel
+    )       # fin de mainPanel
+  )         # fin de sidebarLayout
+)           # fin de fluidPage

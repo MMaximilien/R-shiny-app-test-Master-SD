@@ -16,6 +16,7 @@ server <- function(input, output, session) {
   
   
   # ---- Résumé des filtres actifs ------------------------------------
+  # Remplit textOutput("resume_filtres"). length() compte le nombre d'éléments
   output$resume_filtres <- renderText({
     paste0(
       length(input$annee), " année(s) · ",
@@ -34,6 +35,9 @@ server <- function(input, output, session) {
         trimestre %in% input$trimestre
       )
     
+    # validate(need(condition, "message")) : si la condition est fausse (ici, aucune
+    # ligne après filtrage), Shiny stoppe le calcul et affiche le message à la place
+    # du graphique / tableau, au lieu d'une erreur rouge.
     validate(need(nrow(df) > 0, "Aucune campagne ne correspond à ces filtres."))
     
     df
@@ -73,20 +77,22 @@ server <- function(input, output, session) {
     df <- donnees_filtrees()
     
     df |>
-      count(annee, trimestre, name = "nombre_campagnes") |>
-      left_join(
+      count(annee, trimestre, name = "nombre_campagnes") |>   # count() compte les lignes par couple (annee, trimestre)
+      left_join(  # left_join() ajoute à ce tableau le nombre de campagnes RÉUSSIES par période.
         df |>
           filter(goal_raised == TRUE) |>
           count(annee, trimestre, name = "nombre_reussies"),
         by = c("annee", "trimestre")
       ) |>
       mutate(
+        # Une période sans réussite n'a pas de ligne à droite : le join met NA.
+        # replace_na remplace les NA par 0.
         nombre_reussies = replace_na(nombre_reussies, 0),
         taux_reussite   = round(nombre_reussies / nombre_campagnes * 100, 1),
         periode         = paste0(annee, "- ", trimestre)
       ) |>
       arrange(annee, trimestre) |>
-      mutate(periode = factor(periode, levels = unique(periode)))
+      mutate(periode = factor(periode, levels = unique(periode))) # fige l'ORDRE des période, sinon ordre alphabétique
   })
   
   
@@ -100,7 +106,7 @@ server <- function(input, output, session) {
       df_long <- df |>
         mutate(
           non_reussies = nombre_campagnes - nombre_reussies,
-          tooltip = paste0(
+          tooltip = paste0( #texte de l'infobulle
             "Période : ", periode,
             "\nNombre total de campagnes : ", nombre_campagnes,
             "\nNombre de campagnes réussies : ", nombre_reussies,
@@ -110,33 +116,33 @@ server <- function(input, output, session) {
         select(periode, tooltip, nombre_reussies, non_reussies) |>
         tidyr::pivot_longer(
           cols = c(nombre_reussies, non_reussies),
-          names_to = "statut",
-          values_to = "nombre"
+          names_to = "statut", # fusionne les noms dans la colonne statut -> une colonne avec les 2 statut par période
+          values_to = "nombre" #valeur numérique 
         ) |>
         mutate(
           statut = dplyr::recode(
             statut,
-            nombre_reussies = LABEL_REUSSIE,
-            non_reussies    = LABEL_NON_REUSSIE
+            nombre_reussies = "Réussies",
+            non_reussies    = "Non réussies"
           )
         )
       
-      ggplot(df_long, aes(x = periode, y = nombre, fill = statut)) +
+      ggplot(df_long, aes(x = periode, y = nombre, fill = statut)) + #couleur par statut
         geom_col_interactive(
-          aes(tooltip = tooltip, data_id = periode),
-          position = "fill",
-          width = 0.7
+          aes(tooltip = tooltip, data_id = periode), #Permet d'afficher des infobulles et la période
+          position = "fill", #diagramme en barres empilées proportionnelles
+          width = 0.7 #largeur des barres
         ) +
         scale_fill_manual(values = c(
-          setNames(COULEUR_REUSSIE,     LABEL_REUSSIE),
-          setNames(COULEUR_NON_REUSSIE, LABEL_NON_REUSSIE)
+          setNames(COULEUR_REUSSIE,     "Réussies"),
+          setNames(COULEUR_NON_REUSSIE, "Non réussies")
         )) +
         labs(
           y = "Part des campagnes (%)",
-          fill = NULL,
+          fill = NULL, #supprime le titre de la légende
           title = "Taux de réussite par période"
         ) +
-        scale_y_continuous(labels = scales::label_percent())
+        scale_y_continuous(labels = scales::label_percent()) #Convertit l'axe Y en pourcentage
       
     } else if (input$indicateur == "nb_reussies") {
       
@@ -181,48 +187,42 @@ server <- function(input, output, session) {
   
   output$tableau_duree <- renderTable({
     
-    ordre_trim <- c("T1", "T2", "T3", "T4")
+    ordre_trim <- c("T1", "T2", "T3", "T4") # Vecteur définissant l'ordre
     
     df <- donnees_terminees() |>
-      mutate(annee = as.character(as.integer(annee)))
+      mutate(annee = as.character(annee)) # Convertit l'année en texte
     
     validate(need(nrow(df) > 0, "Aucune campagne terminée pour ces filtres."))
     
+    # Calcul de la durée moyenne par trimestre et pivot en colonnes
     par_trimestre <- df |>
       group_by(annee, trimestre) |>
       summarise(duree_moyenne = round(mean(nb_days, na.rm = TRUE), 1), .groups = "drop") |>
-      tidyr::pivot_wider(names_from = trimestre, values_from = duree_moyenne)
+      tidyr::pivot_wider(names_from = trimestre, values_from = duree_moyenne) |> #transforme les trimestres en colonnes
+      select(annee, any_of(ordre_trim))
     
-    cols_connues   <- intersect(ordre_trim, names(par_trimestre))
-    cols_inconnues <- setdiff(names(par_trimestre), c("annee", ordre_trim))
-    par_trimestre  <- par_trimestre |> select(annee, all_of(cols_connues), all_of(cols_inconnues))
-    
-    par_annee <- df |>
+    # Calcul de la moyenne annuelle et fusion avec les trimestres
+    tableau <- df |>
       group_by(annee) |>
-      summarise(Moyenne = round(mean(nb_days, na.rm = TRUE), 1), .groups = "drop")
-    
-    tableau <- left_join(par_trimestre, par_annee, by = "annee") |>
+      summarise(
+        Moyenne = round(mean(nb_days, na.rm = TRUE), 1),
+        .groups = "drop"
+      ) |>
+      right_join(par_trimestre, by = "annee") |> # joint moyenne annuelle avec le tableau des trimestres
+      relocate(Moyenne, .after = last_col()) |> # Déplace la colonne Moyenne tout à droite
       arrange(annee)
     
-    ligne_ensemble <- tableau |>
-      summarise(across(where(is.numeric), ~ round(mean(.x, na.rm = TRUE), 1))) |>
-      mutate(annee = "Ensemble")
     
-    tableau <- bind_rows(tableau, ligne_ensemble)
-    
+    # Formatage final (remplacement des NA par "–", ajout de " j" et renommage)
     tableau |>
-      mutate(across(
-        where(is.numeric),
-        ~ ifelse(is.na(.x), "–", paste0(formatC(.x, format = "f", digits = 1, decimal.mark = ","), " j"))
-      )) |>
+      mutate(across(where(is.numeric), ~ ifelse(is.na(.x), "–", paste0(.x, " j")))) |>
       rename(Année = annee)
     
-  }, striped = TRUE,
-  hover    = TRUE,
-  bordered = TRUE,
-  spacing  = "s",
-  align    = "c",
-  width    = "100%"
+  }, striped = TRUE, #effet zebre
+  hover    = TRUE, #change de couleur quand on passe la souris
+  bordered = TRUE, # bordures 
+  align    = "c", #centre le texte
+  width    = "100%" #toute la largeur
   )
   
   
@@ -257,7 +257,7 @@ server <- function(input, output, session) {
     
     df <- donnees_filtrees() |>
       mutate(
-        statut  = ifelse(goal_raised, LABEL_REUSSIE, LABEL_NON_REUSSIE),
+        statut  = ifelse(goal_raised, "Réussies", "Non réussies"),
         periode = paste0(annee, " - ", trimestre)
       )
     
@@ -297,12 +297,12 @@ server <- function(input, output, session) {
             ),
             data_id = paste(periode, statut)
           ),
-          position = "stack",
+          position = "stack", #Empile les barres des différents statuts les unes
           width = 0.7
         ) +
         scale_fill_manual(values = c(
-          setNames(COULEUR_REUSSIE,     LABEL_REUSSIE),
-          setNames(COULEUR_NON_REUSSIE, LABEL_NON_REUSSIE)
+          setNames(COULEUR_REUSSIE,     "Réussies"),
+          setNames(COULEUR_NON_REUSSIE, "Non réussies")
         )) +
         labs(
           x = "Période", y = "Montant total financé (€)", fill = "Statut",
@@ -427,16 +427,11 @@ server <- function(input, output, session) {
   
   output$table_donnees <- DT::renderDT({
     extrait <- table_export(donnees_filtrees()) |>
-      # Lien cliquable (seule colonne dont le HTML n'est pas échappé)
-      mutate(Lien = ifelse(
-        is.na(Lien), NA_character_,
-        paste0('<a href="', Lien, '" target="_blank" rel="noopener">Ouvrir</a>')
-      ))
+      select(-any_of("Lien"))
     
     DT::datatable(
       extrait,
       filter   = "top",
-      escape   = setdiff(names(extrait), "Lien"),
       options  = list(pageLength = 10, scrollX = TRUE),
       rownames = FALSE
     ) |>
@@ -448,8 +443,8 @@ server <- function(input, output, session) {
     filename = function() {
       paste0("campagnes_ulule_", Sys.Date(), ".csv")
     },
-    content = function(file) {
+    content = function(file) { #génère et écrit le contenu 
       readr::write_excel_csv2(table_export(donnees_filtrees()), file)
-    }
+    } #Le format _csv2 utilise ; comme séparateur
   )
 }

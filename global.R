@@ -20,7 +20,7 @@ data_ulule <- read_csv(chemin_donnees)
 
 
 # ---- Nettoyage des données -------------------------------------------
-data_ulule_clean <- data_ulule |>
+data_ulule_propre <- data_ulule |>
   mutate(
     # Conversion des colonnes de dates en vrai type Date
     date_start = as.Date(date_start),
@@ -41,9 +41,9 @@ data_ulule_clean <- data_ulule |>
   )
 
 # ---- Listes utilisées dans les filtres de l'UI -----------------------
-liste_annees     <- sort(unique(data_ulule_clean$annee))
-liste_trimestres <- sort(unique(data_ulule_clean$trimestre))
-liste_categories <- sort(unique(na.omit(data_ulule_clean$category)))
+liste_annees     <- sort(unique(data_ulule_propre$annee))
+liste_trimestres <- sort(unique(data_ulule_propre$trimestre))
+liste_categories <- sort(unique(na.omit(data_ulule_propre$category)))
 
 # Correspondance "libellé affiché" -> "valeur technique" (input$indicateur)
 indicateurs_campagnes <- c(
@@ -76,9 +76,6 @@ COULEUR_NOIR        <- "#2B2B2B"
 COULEUR_VIOLET      <- "#8E44AD"
 COULEUR_TEXTE_KPI   <- "#FFFFFF"
 
-# Libellés des statuts, utilisés partout pour rester cohérent
-LABEL_REUSSIE     <- "Réussies"
-LABEL_NON_REUSSIE <- "Non réussies"
 
 
 # ---- Textes d'aide (infobulles) ----------------------------------------
@@ -119,10 +116,10 @@ AIDE_CLASSEMENT_PAYS <- paste(
 
 # Petite icône "i" avec infobulle (bslib::tooltip), à placer à côté d'un titre
 icone_aide <- function(texte) {
-  bslib::tooltip(
-    bsicons::bs_icon("info-circle", class = "ms-1"),
+  bslib::tooltip( #permet de faire une infobulle
+    bsicons::bs_icon("info-circle", class = "ms-1"), #icone I avec un espace à gauche
     texte,
-    placement = "top"
+    placement = "top" # infobulle au dessus de l'icone
   )
 }
 
@@ -162,7 +159,7 @@ table_export <- function(df) {
 theme_ulule <- function() {
   theme_minimal() +
     theme(
-      panel.grid      = element_blank(),
+      panel.grid      = element_blank(), #supprime le quadrillage
       legend.position = "bottom",
       axis.text.x     = element_text(angle = 45, hjust = 1)
     )
@@ -171,11 +168,11 @@ theme_ulule <- function() {
 # Convertit un objet ggplot en graphique interactif girafe
 to_girafe <- function(p) {
   girafe(
-    ggobj = p,
+    ggobj = p, #objet qui va etre transformé
     width_svg  = 8,
     height_svg = 4.5,
     options = list(
-      opts_sizing(rescale = TRUE, width = 1)
+      opts_sizing(rescale = TRUE, width = 1) #prend toutes la largeur disponible et redimensionner si on change d'écran 
     )
   )
 }
